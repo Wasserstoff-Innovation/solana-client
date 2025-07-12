@@ -1,125 +1,130 @@
-# Solana Validator Docs Readme
+# Solana Codebase Architecture Documentation
 
-This validator's documentation is built using [Docusaurus v2](https://v2.docusaurus.io/) with `npm`.
-Static content delivery is handled using `vercel`.
+This documentation provides a comprehensive overview of the Solana blockchain codebase architecture, including detailed explanations of each component, their interactions, and the overall system design.
 
-> Note: The documentation within this repo is specifically focused on the
-> Solana validator client maintained by Solana Labs. The more "common"
-> documentation, which is generalized to the Solana protocol as a whole and applies
-> to all Solana validator implementations, is maintained within the
-> [`developer-content`](https://github.com/solana-foundation/developer-content/)
-> repo. Those "common docs" are managed by the Solana Foundation within their
-> GitHub organization and are publicly accessible via
-> [solana.com/docs](https://solana.com/docs)
+## Table of Contents
 
-## Local Development
+1. [Overview](#overview)
+2. [System Architecture](#system-architecture)
+3. [Component Documentation](#component-documentation)
+4. [Development Workflows](#development-workflows)
+5. [Build and Deployment](#build-and-deployment)
 
-To set up the Solana Validator Docs site locally:
+## Overview
 
-- install dependencies using `npm`
-- build locally via `./build.sh`
-- run the local development server
-- make your changes and updates as needed
+Solana is a high-performance blockchain platform designed for decentralized applications and marketplaces. The codebase is organized as a Rust workspace with multiple crates that handle different aspects of the blockchain system.
 
-> Note: After cloning this repo to your local machine, all the local development commands are run from within this `docs` directory.
+### Key Characteristics
 
-### Install dependencies
+- **High Performance**: Designed for 65,000+ transactions per second
+- **Low Cost**: Sub-cent transaction fees
+- **Scalable**: Horizontal scaling through validator networks
+- **Developer Friendly**: Comprehensive tooling and SDKs
 
-Install the site's dependencies via `npm`:
+## System Architecture
 
-```bash
-npm install
-```
+The Solana codebase is organized into several major subsystems:
 
-### Build locally
+### Core Components
 
-The build script generates static content into the `build` directory and can be served using any static content hosting service.
+1. **Validator** - The main blockchain node implementation
+2. **Core** - Core blockchain logic and data structures
+3. **Runtime** - Transaction execution engine
+4. **RPC** - Remote Procedure Call interface
+5. **CLI** - Command-line interface tools
+6. **Programs** - Native programs (System, Stake, Vote, etc.)
 
-```bash
-./build.sh
-```
+### Supporting Components
 
-Running this build script requires **Docker**, and will auto fetch the [solanalabs/rust](https://hub.docker.com/r/solanalabs/rust) image from Docker hub to compile the desired version of the [Solana CLI](https://docs.solanalabs.com/cli) from source.
+1. **Accounts DB** - Account storage and management
+2. **Banking** - Transaction processing pipeline
+3. **Gossip** - Network communication protocol
+4. **POH** - Proof of History consensus mechanism
+5. **SVM** - Solana Virtual Machine
+6. **Storage** - Data persistence layer
 
-This build script will also:
+## Component Documentation
 
-- generate the `cli/usage.md` document from the output of each of the Solana CLI commands and sub-commands
-- convert each of the `art/*.bob` files into SVG images used throughout the docs
+Each component has its own detailed documentation:
 
-> Note: Running this build script is **required** before being able to run the site locally via the `npm run start` command since it will generate the `cli/usage.md` document.
+### Core Components
+- [Validator Architecture](./validator/README.md)
+- [Core System](./core/README.md)
+- [Runtime Engine](./runtime/README.md)
+- [Accounts Database](./accounts-db/README.md)
 
-If you run into errors or issues with this step, see [Common Issues](#common-issues) below. See also [CI Build Flow](#ci-build-flow) for more details on production deployments of the docs.
+### Interface Components
+- [CLI Tools](./cli/README.md)
+- [RPC Interface](./rpc/README.md)
 
-### Local development server
+### Banking Components
+- [Banking Stage Ingress Types](./banking-stage-ingress-types/README.md)
+- [Banks Client](./banks-client/README.md)
+- [Banks Interface](./banks-interface/README.md)
+- [Banks Server](./banks-server/README.md)
 
-This command starts the Docusaurus local development server and opens up a browser window.
+### Native Programs
+- [Native Programs](./programs/README.md)
 
-```bash
-npm run start
-```
+### Utility Components
+- [Account Decoder](./account-decoder/README.md)
 
-> Note: Most changes are reflected live without having to restart the server or refresh the page. However, some changes may require a manual refresh of the page or a restart of the development server (via the command above).
+### Architecture and Workflows
+- [Complete Architecture](./ARCHITECTURE.md)
+- [Dependency Map](./DEPENDENCY_MAP.md)
+- [Workflows](./WORKFLOWS.md)
 
-## CI Build Flow
+## Development Workflows
 
-The docs are built and published in Github Actions with the `docs.yml` workflow. On each PR, the docs are built, but not published.
+### Running a Validator
 
-In each post-commit build, docs are built and published using `vercel` to their respective domain depending on the build branch.
+The validator is the main blockchain node that processes transactions and maintains the ledger. See [Validator Documentation](./validator/README.md) for detailed instructions.
 
-- Master branch docs are published to `edge.docs.solanalabs.com`
-- Beta branch docs are published to `beta.docs.solanalabs.com`
-- Latest release tag docs are published to `docs.solanalabs.com`
+### Creating Genesis
 
-## Common Issues
+Genesis is the initial state of the blockchain. See [Genesis Documentation](./genesis/README.md) for configuration options.
 
-### Bad sidebars file (or `cli/usage` not found)
+### Building Programs
 
-```bash
-Error: Bad sidebars file.
-These sidebar document ids do not exist:
-- cli/usage,
-```
+Native programs can be built and deployed to the blockchain. See [Programs Documentation](./programs/README.md) for development guidelines.
 
-If you have NOT successfully run the build script, then the `cli/usage.md` file will not exist within your local repo (since it is in `.gitignore`). Not having this doc file, will result in the error message above.
+## Build and Deployment
 
-If the Rust toolchain (specifically `cargo`) is installed on your system, you can specifically build the `cli/usage.md` document via:
+### Prerequisites
 
-```bash
-./build-cli-usage.sh
-```
+- Rust 1.70+
+- Cargo
+- Platform-specific dependencies (see individual component docs)
 
-Or using Docker and the normal build script, you can perform a full production build of the docs to generate this file:
-
-```bash
-./build.sh
-```
-
-### Permission denied for the Docker socket
-
-```bash
-Got permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Post
-```
-
-Running docs build script (`./build.sh`) required the use of Docker.\*\*\*\*
-
-Ensuring you have Docker installed on your system and it is running.
-
-You may also try running either of these build scripts (and by association, Docker) with elevation permissions via `sudo`:
+### Building
 
 ```bash
-sudo ./build.sh
-# or
-sudo ./build-cli-usage.sh
+# Build all components
+cargo build --release
+
+# Build specific component
+cargo build --release -p solana-validator
 ```
 
-### Multiple SVG images not found
+### Testing
 
 ```bash
-Error: Image static/img/***.svg used in src/***.md not found.
+# Run all tests
+cargo test
+
+# Run specific component tests
+cargo test -p solana-validator
 ```
 
-During the build process of the docs (specifically within the `./convert-ascii-to-svg.sh` script run by `./build.sh`), each of the `art/*.bob` files are converted to SVG images and saved to the `static/img` directory.
+## Contributing
 
-To correct this issue, use the steps above to [build the docs locally](#build-locally).
+When contributing to the Solana codebase:
 
-> Note: While not generating and saving these SVG images within your local repo will **NOT** prevent you from running the local development server, it will result in numerous output errors in your terminal.
+1. Follow the Rust coding standards
+2. Add tests for new functionality
+3. Update relevant documentation
+4. Ensure all tests pass before submitting
+
+## License
+
+This project is licensed under the Apache License 2.0 - see the [LICENSE](../LICENSE) file for details.
