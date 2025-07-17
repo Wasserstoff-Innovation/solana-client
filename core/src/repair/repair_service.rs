@@ -172,7 +172,7 @@ impl RepairStats {
             .chain(self.orphan.slot_pubkeys.iter())
             .map(|(slot, slot_repairs)| (slot, slot_repairs.pubkey_repairs.values().sum::<u64>()))
             .collect();
-        info!("repair_stats: {:?}", slot_to_count);
+        info!("repair_stats: {slot_to_count:?}");
         if repair_total > 0 {
             let nonzero_num = |x| if x == 0 { None } else { Some(x) };
             datapoint_info!(
@@ -609,10 +609,7 @@ impl RepairService {
             }
         });
         if !popular_pruned_forks.is_empty() {
-            warn!(
-                "Notifying repair of popular pruned forks {:?}",
-                popular_pruned_forks
-            );
+            warn!("Notifying repair of popular pruned forks {popular_pruned_forks:?}");
             popular_pruned_forks_sender
                 .send(popular_pruned_forks)
                 .unwrap_or_else(|err| error!("failed to send popular pruned forks {err}"));
@@ -665,7 +662,9 @@ impl RepairService {
                 Ok(()) => (),
                 Err(SendPktsError::IoError(err, num_failed)) => {
                     error!(
-                        "{} batch_send failed to send {num_failed}/{num_pkts} packets first error {err:?}", repair_info.cluster_info.id()
+                        "{} batch_send failed to send {num_failed}/{num_pkts} packets first error \
+                         {err:?}",
+                        repair_info.cluster_info.id()
                     );
                 }
             }
@@ -1067,7 +1066,7 @@ impl RepairService {
                 debug!("successfully sent repair request to {pubkey} / {address}!");
             }
             Err(SendPktsError::IoError(err, _num_failed)) => {
-                error!("batch_send failed to send packet - error = {:?}", err);
+                error!("batch_send failed to send packet - error = {err:?}");
             }
         }
     }
@@ -1183,8 +1182,8 @@ impl RepairService {
                             Ok(req) => {
                                 if let Err(e) = repair_socket.send_to(&req, repair_addr) {
                                     info!(
-                                        "repair req send_to {} ({}) error {:?}",
-                                        repair_pubkey, repair_addr, e
+                                        "repair req send_to {repair_pubkey} ({repair_addr}) error \
+                                         {e:?}"
                                     );
                                 }
                             }
@@ -1276,12 +1275,18 @@ mod test {
             get_tmp_ledger_path_auto_delete,
             shred::max_ticks_per_n_shreds,
         },
-        solana_net_utils::{bind_to_localhost, bind_to_unspecified},
+        solana_net_utils::{
+            bind_to_unspecified,
+            sockets::{bind_to, localhost_port_range_for_tests},
+        },
         solana_runtime::bank::Bank,
         solana_signer::Signer,
         solana_streamer::socket::SocketAddrSpace,
         solana_time_utils::timestamp,
-        std::collections::HashSet,
+        std::{
+            collections::HashSet,
+            net::{IpAddr, Ipv4Addr},
+        },
     };
 
     fn new_test_cluster_info() -> ClusterInfo {
@@ -1297,9 +1302,10 @@ mod test {
         let pubkey = cluster_info.id();
         let slot = 100;
         let shred_index = 50;
-        let reader = bind_to_localhost().expect("bind");
+        let port_range = localhost_port_range_for_tests();
+        let reader = bind_to(IpAddr::V4(Ipv4Addr::LOCALHOST), port_range.0).expect("should bind");
         let address = reader.local_addr().unwrap();
-        let sender = bind_to_localhost().expect("bind");
+        let sender = bind_to(IpAddr::V4(Ipv4Addr::LOCALHOST), port_range.1).expect("should bind");
         let outstanding_repair_requests = Arc::new(RwLock::new(OutstandingShredRepairs::default()));
 
         // Send a repair request

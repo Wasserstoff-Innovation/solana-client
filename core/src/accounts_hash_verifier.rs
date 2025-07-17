@@ -6,8 +6,8 @@ use {
     solana_accounts_db::{
         accounts_db::CalcAccountsHashKind,
         accounts_hash::{
-            AccountsHash, AccountsHashKind, CalcAccountsHashConfig, HashStats,
-            IncrementalAccountsHash, MerkleOrLatticeAccountsHash,
+            AccountsHash, CalcAccountsHashConfig, HashStats, IncrementalAccountsHash,
+            MerkleOrLatticeAccountsHash,
         },
         sorted_storages::SortedStorages,
     },
@@ -142,51 +142,18 @@ impl AccountsHashVerifier {
                 Some((accounts_package, 1, 0))
             }
             _ => {
-                let num_eah_packages = accounts_packages
-                    .iter()
-                    .filter(|account_package| {
-                        account_package.package_kind == AccountsPackageKind::EpochAccountsHash
-                    })
-                    .count();
-                assert!(
-                    num_eah_packages <= 1,
-                    "Only a single EAH accounts package is allowed at a time! count: \
-                     {num_eah_packages}"
-                );
-
                 // Get the two highest priority requests, `y` and `z`.
                 // By asking for the second-to-last element to be in its final sorted position, we
                 // also ensure that the last element is also sorted.
-                let (_, y, z) = accounts_packages.select_nth_unstable_by(
+                // Note, we no longer need the second-to-last element; this code can be refactored.
+                let (_, _y, z) = accounts_packages.select_nth_unstable_by(
                     accounts_packages_len - 2,
                     snapshot_package::cmp_accounts_packages_by_priority,
                 );
                 assert_eq!(z.len(), 1);
-                let z = z.first().unwrap();
-                let y: &_ = y; // reborrow to remove `mut`
 
-                // If the highest priority request (`z`) is EpochAccountsHash, we need to check if
-                // there's a FullSnapshot request with a lower slot in `y` that is about to be
-                // dropped.  We do not want to drop a FullSnapshot request in this case because it
-                // will cause subsequent IncrementalSnapshot requests to fail.
-                //
-                // So, if `z` is an EpochAccountsHash request, check `y`.  We know there can only
-                // be at most one EpochAccountsHash request, so `y` is the only other request we
-                // need to check.  If `y` is a FullSnapshot request *with a lower slot* than `z`,
-                // then handle `y` first.
-                let accounts_package = if z.package_kind == AccountsPackageKind::EpochAccountsHash
-                    && y.package_kind == AccountsPackageKind::Snapshot(SnapshotKind::FullSnapshot)
-                    && y.slot < z.slot
-                {
-                    // SAFETY: We know the len is > 1, so both `pop`s will return `Some`
-                    let z = accounts_packages.pop().unwrap();
-                    let y = accounts_packages.pop().unwrap();
-                    accounts_packages.push(z);
-                    y
-                } else {
-                    // SAFETY: We know the len is > 1, so `pop` will return `Some`
-                    accounts_packages.pop().unwrap()
-                };
+                // SAFETY: We know the len is > 1, so `pop` will return `Some`
+                let accounts_package = accounts_packages.pop().unwrap();
 
                 let handled_accounts_package_slot = accounts_package.slot;
                 // re-enqueue any remaining accounts packages for slots GREATER-THAN the accounts package
@@ -221,8 +188,6 @@ impl AccountsHashVerifier {
         let (merkle_or_lattice_accounts_hash, bank_incremental_snapshot_persistence) =
             Self::calculate_and_verify_accounts_hash(&accounts_package, snapshot_config)?;
 
-        Self::save_epoch_accounts_hash(&accounts_package, &merkle_or_lattice_accounts_hash);
-
         Self::purge_old_accounts_hashes(&accounts_package, snapshot_config);
 
         Self::submit_for_packaging(
@@ -246,21 +211,20 @@ impl AccountsHashVerifier {
         match accounts_package.accounts_hash_algorithm {
             AccountsHashAlgorithm::Merkle => {
                 debug!(
-                    "calculate_and_verify_accounts_hash(): snapshots lt hash is disabled, \
-                     DO merkle-based accounts hash calculation",
+                    "calculate_and_verify_accounts_hash(): snapshots lt hash is disabled, DO \
+                     merkle-based accounts hash calculation",
                 );
             }
             AccountsHashAlgorithm::Lattice => {
                 debug!(
-                    "calculate_and_verify_accounts_hash(): snapshots lt hash is enabled, \
-                     SKIP merkle-based accounts hash calculation",
+                    "calculate_and_verify_accounts_hash(): snapshots lt hash is enabled, SKIP \
+                     merkle-based accounts hash calculation",
                 );
                 return Ok((MerkleOrLatticeAccountsHash::Lattice, None));
             }
         }
 
         let accounts_hash_calculation_kind = match accounts_package.package_kind {
-            AccountsPackageKind::EpochAccountsHash => CalcAccountsHashKind::Full,
             AccountsPackageKind::Snapshot(snapshot_kind) => match snapshot_kind {
                 SnapshotKind::FullSnapshot => CalcAccountsHashKind::Full,
                 SnapshotKind::IncrementalSnapshot(_) => CalcAccountsHashKind::Incremental,
@@ -284,6 +248,7 @@ impl AccountsHashVerifier {
                     let Some((base_accounts_hash, base_capitalization)) =
                         accounts_db.get_accounts_hash(base_slot)
                     else {
+                        #[rustfmt::skip]
                         panic!(
                             "incremental snapshot requires accounts hash and capitalization from \
                              the full snapshot it is based on\n\
@@ -380,10 +345,6 @@ impl AccountsHashVerifier {
             );
         }
 
-        if let Some(expected_hash) = accounts_package.accounts_hash_for_testing {
-            assert_eq!(expected_hash, accounts_hash);
-        };
-
         datapoint_info!(
             "accounts_hash_verifier",
             ("calculate_hash", measure_hash_us, i64),
@@ -437,28 +398,6 @@ impl AccountsHashVerifier {
         );
 
         incremental_accounts_hash
-    }
-
-    fn save_epoch_accounts_hash(
-        accounts_package: &AccountsPackage,
-        merkle_or_lattice_accounts_hash: &MerkleOrLatticeAccountsHash,
-    ) {
-        if accounts_package.package_kind == AccountsPackageKind::EpochAccountsHash {
-            let MerkleOrLatticeAccountsHash::Merkle(AccountsHashKind::Full(accounts_hash)) =
-                merkle_or_lattice_accounts_hash
-            else {
-                panic!("EAH requires a full accounts hash, but was given {merkle_or_lattice_accounts_hash:?}");
-            };
-            info!(
-                "saving epoch accounts hash, slot: {}, hash: {}",
-                accounts_package.slot, accounts_hash.0,
-            );
-            accounts_package
-                .accounts
-                .accounts_db
-                .epoch_accounts_hash_manager
-                .set_valid((*accounts_hash).into(), accounts_package.slot);
-        }
     }
 
     fn purge_old_accounts_hashes(
@@ -533,9 +472,6 @@ mod tests {
             ..AccountsPackage::default_for_tests()
         }
     }
-    fn new_eah(slot: Slot) -> AccountsPackage {
-        new(AccountsPackageKind::EpochAccountsHash, slot)
-    }
     fn new_fss(slot: Slot) -> AccountsPackage {
         new(
             AccountsPackageKind::Snapshot(SnapshotKind::FullSnapshot),
@@ -562,13 +498,12 @@ mod tests {
         let mut accounts_packages = [
             new_fss(100), // skipped, since there's another full snapshot with a higher slot
             new_iss(110, 100),
-            new_eah(200), // <-- handle 1st
             new_iss(210, 100),
-            new_fss(300),
+            new_fss(300), // skipped, since there's another full snapshot with a higher slot
             new_iss(310, 300),
-            new_fss(400), // <-- handle 2nd
+            new_fss(400), // <-- handle 1st
             new_iss(410, 400),
-            new_iss(420, 400), // <-- handle 3rd
+            new_iss(420, 400), // <-- handle 2nd
         ];
         // Shuffle the accounts packages to simulate receiving new accounts packages from ABS
         // simultaneously as AHV is processing them.
@@ -577,25 +512,8 @@ mod tests {
             .into_iter()
             .for_each(|accounts_package| accounts_package_sender.send(accounts_package).unwrap());
 
-        // The EAH is handled 1st
-        let (
-            account_package,
-            _num_outstanding_accounts_packages,
-            num_re_enqueued_accounts_packages,
-        ) = AccountsHashVerifier::get_next_accounts_package(
-            &accounts_package_sender,
-            &accounts_package_receiver,
-        )
-        .unwrap();
-        assert_eq!(
-            account_package.package_kind,
-            AccountsPackageKind::EpochAccountsHash
-        );
-        assert_eq!(account_package.slot, 200);
-        assert_eq!(num_re_enqueued_accounts_packages, 6);
-
-        // The Full Snapshot from slot 400 is handled 2nd
-        // (the older full snapshot from slot 300 is skipped and dropped)
+        // The Full Snapshot from slot 400 is handled 1st
+        // (the older full snapshots are skipped and dropped)
         let (
             account_package,
             _num_outstanding_accounts_packages,
@@ -628,89 +546,6 @@ mod tests {
             AccountsPackageKind::Snapshot(SnapshotKind::IncrementalSnapshot(400))
         );
         assert_eq!(account_package.slot, 420);
-        assert_eq!(num_re_enqueued_accounts_packages, 0);
-
-        // And now the accounts package channel is empty!
-        assert!(AccountsHashVerifier::get_next_accounts_package(
-            &accounts_package_sender,
-            &accounts_package_receiver
-        )
-        .is_none());
-    }
-
-    /// Ensure that unhandled accounts packages are properly re-enqueued or dropped
-    ///
-    /// This test differs from the one above by having an older full snapshot request that must be
-    /// handled before the new epoch accounts hash request.
-    #[test]
-    fn test_get_next_accounts_package2() {
-        let (accounts_package_sender, accounts_package_receiver) = crossbeam_channel::unbounded();
-
-        // Populate the channel so that re-enqueueing and dropping will be tested
-        let mut accounts_packages = [
-            new_fss(100), // <-- handle 1st
-            new_iss(110, 100),
-            new_eah(200), // <-- handle 2nd
-            new_iss(210, 100),
-            new_iss(220, 100), // <-- handle 3rd
-        ];
-        // Shuffle the accounts packages to simulate receiving new accounts packages from ABS
-        // simultaneously as AHV is processing them.
-        accounts_packages.shuffle(&mut rand::thread_rng());
-        accounts_packages
-            .into_iter()
-            .for_each(|accounts_package| accounts_package_sender.send(accounts_package).unwrap());
-
-        // The Full Snapshot is handled 1st
-        let (
-            account_package,
-            _num_outstanding_accounts_packages,
-            num_re_enqueued_accounts_packages,
-        ) = AccountsHashVerifier::get_next_accounts_package(
-            &accounts_package_sender,
-            &accounts_package_receiver,
-        )
-        .unwrap();
-        assert_eq!(
-            account_package.package_kind,
-            AccountsPackageKind::Snapshot(SnapshotKind::FullSnapshot)
-        );
-        assert_eq!(account_package.slot, 100);
-        assert_eq!(num_re_enqueued_accounts_packages, 4);
-
-        // The EAH is handled 2nd
-        let (
-            account_package,
-            _num_outstanding_accounts_packages,
-            num_re_enqueued_accounts_packages,
-        ) = AccountsHashVerifier::get_next_accounts_package(
-            &accounts_package_sender,
-            &accounts_package_receiver,
-        )
-        .unwrap();
-        assert_eq!(
-            account_package.package_kind,
-            AccountsPackageKind::EpochAccountsHash
-        );
-        assert_eq!(account_package.slot, 200);
-        assert_eq!(num_re_enqueued_accounts_packages, 2);
-
-        // The Incremental Snapshot from slot 220 is handled 3rd
-        // (the older incremental snapshot from slot 210 is skipped and dropped)
-        let (
-            account_package,
-            _num_outstanding_accounts_packages,
-            num_re_enqueued_accounts_packages,
-        ) = AccountsHashVerifier::get_next_accounts_package(
-            &accounts_package_sender,
-            &accounts_package_receiver,
-        )
-        .unwrap();
-        assert_eq!(
-            account_package.package_kind,
-            AccountsPackageKind::Snapshot(SnapshotKind::IncrementalSnapshot(100))
-        );
-        assert_eq!(account_package.slot, 220);
         assert_eq!(num_re_enqueued_accounts_packages, 0);
 
         // And now the accounts package channel is empty!

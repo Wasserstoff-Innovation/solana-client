@@ -115,14 +115,6 @@ pub fn accounts_db_args<'a, 'b>() -> Box<[Arg<'a, 'b>]> {
             .takes_value(true)
             .possible_values(&["mmap", "file"])
             .help("Access account storages using this method"),
-        Arg::with_name("no_accounts_db_experimental_accumulator_hash")
-            .long("no-accounts-db-experimental-accumulator-hash")
-            .help("Disables the experimental accumulator hash")
-            .hidden(hidden_unless_forced()),
-        Arg::with_name("accounts_db_verify_experimental_accumulator_hash")
-            .long("accounts-db-verify-experimental-accumulator-hash")
-            .help("Verifies the experimental accumulator hash")
-            .hidden(hidden_unless_forced()),
         Arg::with_name("accounts_db_snapshots_use_experimental_accumulator_hash")
             .long("accounts-db-snapshots-use-experimental-accumulator-hash")
             .help("Snapshots use the experimental accumulator hash")
@@ -231,13 +223,9 @@ pub fn parse_process_options(ledger_path: &Path, arg_matches: &ArgMatches<'_>) -
         UseSnapshotArchivesAtStartup
     );
     let accounts_db_skip_shrink = arg_matches.is_present("accounts_db_skip_shrink");
-    let accounts_db_test_hash_calculation =
-        arg_matches.is_present("accounts_db_test_hash_calculation");
     let verify_index = arg_matches.is_present("verify_accounts_index");
     let limit_load_slot_count_from_snapshot =
         value_t!(arg_matches, "limit_load_slot_count_from_snapshot", usize).ok();
-    let on_halt_store_hash_raw_data_for_debug =
-        arg_matches.is_present("halt_at_slot_store_hash_raw_data");
     let run_final_accounts_hash_calc = arg_matches.is_present("run_final_hash_calc");
     let debug_keys = pubkeys_of(arg_matches, "debug_key")
         .map(|pubkeys| Arc::new(pubkeys.into_iter().collect::<HashSet<_>>()));
@@ -250,10 +238,8 @@ pub fn parse_process_options(ledger_path: &Path, arg_matches: &ArgMatches<'_>) -
         runtime_config,
         accounts_db_config,
         accounts_db_skip_shrink,
-        accounts_db_test_hash_calculation,
         verify_index,
         limit_load_slot_count_from_snapshot,
-        on_halt_store_hash_raw_data_for_debug,
         run_final_accounts_hash_calc,
         debug_keys,
         run_verification,
@@ -362,10 +348,6 @@ pub fn get_accounts_db_config(
         skip_initial_hash_calc: arg_matches.is_present("accounts_db_skip_initial_hash_calculation"),
         storage_access,
         scan_filter_for_shrinking,
-        enable_experimental_accumulator_hash: !arg_matches
-            .is_present("no_accounts_db_experimental_accumulator_hash"),
-        verify_experimental_accumulator_hash: arg_matches
-            .is_present("accounts_db_verify_experimental_accumulator_hash"),
         snapshots_use_experimental_accumulator_hash: arg_matches
             .is_present("accounts_db_snapshots_use_experimental_accumulator_hash"),
         num_hash_threads,

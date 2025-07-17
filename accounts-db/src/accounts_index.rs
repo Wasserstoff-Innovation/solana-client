@@ -21,10 +21,7 @@ use {
     iter::{AccountsIndexIterator, AccountsIndexIteratorReturnsItems},
     log::*,
     rand::{thread_rng, Rng},
-    rayon::{
-        iter::{IntoParallelIterator, ParallelIterator},
-        ThreadPool,
-    },
+    rayon::iter::{IntoParallelIterator, ParallelIterator},
     roots_tracker::RootsTracker,
     secondary::{RwLockSecondaryIndexEntry, SecondaryIndex, SecondaryIndexEntry},
     solana_account::ReadableAccount,
@@ -399,20 +396,6 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> AccountsIndex<T, U> {
         (start_bin, end_bin_inclusive)
     }
 
-    /// returns the start bin and the number of bins to scan
-    fn bin_start_and_len<R>(&self, range: &R) -> (usize, usize)
-    where
-        R: RangeBounds<Pubkey> + Debug + Sync,
-    {
-        let (start_bin, end_bin_inclusive) = self.bin_start_end_inclusive(range);
-        let bins_len = if start_bin > end_bin_inclusive {
-            0
-        } else {
-            end_bin_inclusive - start_bin + 1
-        };
-        (start_bin, bins_len)
-    }
-
     #[allow(clippy::type_complexity)]
     fn allocate_accounts_index(
         config: &AccountsIndexConfig,
@@ -730,24 +713,30 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> AccountsIndex<T, U> {
         let mut iterator_elapsed = 0;
         let mut iterator_timer = Measure::start("iterator_elapsed");
 
-        for pubkey_list in self.iter(range.as_ref(), returns_items) {
+        for pubkeys in self.iter(range.as_ref(), returns_items) {
             iterator_timer.stop();
             iterator_elapsed += iterator_timer.as_us();
-            for (pubkey, list) in pubkey_list {
+            for pubkey in pubkeys {
                 num_keys_iterated += 1;
-                let mut read_lock_timer = Measure::start("read_lock");
-                let list_r = &list.slot_list.read().unwrap();
-                read_lock_timer.stop();
-                read_lock_elapsed += read_lock_timer.as_us();
-                let mut latest_slot_timer = Measure::start("latest_slot");
-                if let Some(index) = self.latest_slot(Some(ancestors), list_r, max_root) {
-                    latest_slot_timer.stop();
-                    latest_slot_elapsed += latest_slot_timer.as_us();
-                    let mut load_account_timer = Measure::start("load_account");
-                    func(&pubkey, (&list_r[index].1, list_r[index].0));
-                    load_account_timer.stop();
-                    load_account_elapsed += load_account_timer.as_us();
-                }
+                self.get_and_then(&pubkey, |entry| {
+                    if let Some(list) = entry {
+                        let mut read_lock_timer = Measure::start("read_lock");
+                        let list_r = &list.slot_list.read().unwrap();
+                        read_lock_timer.stop();
+                        read_lock_elapsed += read_lock_timer.as_us();
+                        let mut latest_slot_timer = Measure::start("latest_slot");
+                        if let Some(index) = self.latest_slot(Some(ancestors), list_r, max_root) {
+                            latest_slot_timer.stop();
+                            latest_slot_elapsed += latest_slot_timer.as_us();
+                            let mut load_account_timer = Measure::start("load_account");
+                            func(&pubkey, (&list_r[index].1, list_r[index].0));
+                            load_account_timer.stop();
+                            load_account_elapsed += load_account_timer.as_us();
+                        }
+                    }
+                    let add_to_in_mem_cache = false;
+                    (add_to_in_mem_cache, ())
+                });
                 if config.is_aborted() {
                     return;
                 }
@@ -1046,21 +1035,6 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> AccountsIndex<T, U> {
         }
 
         rv.map(|index| slot_list.len() - 1 - index)
-    }
-
-    pub fn hold_range_in_memory<R>(&self, range: &R, start_holding: bool, thread_pool: &ThreadPool)
-    where
-        R: RangeBounds<Pubkey> + Debug + Sync,
-    {
-        let (start_bin, bins_len) = self.bin_start_and_len(range);
-        // the idea is this range shouldn't be more than a few buckets, but the process of loading
-        // from disk buckets is very slow, so, parallelize the bucket loads
-        thread_pool.install(|| {
-            (0..bins_len).into_par_iter().for_each(|idx| {
-                let map = &self.account_maps[idx + start_bin];
-                map.hold_range_in_memory(range, start_holding);
-            });
-        });
     }
 
     pub(crate) fn bucket_map_holder_stats(&self) -> &BucketMapHolderStats {
@@ -3343,26 +3317,6 @@ pub mod tests {
         fn is_zero_lamport(&self) -> bool {
             false
         }
-    }
-
-    #[test]
-    fn test_bin_start_and_range() {
-        let index = AccountsIndex::<bool, bool>::default_for_tests();
-        let range = (Unbounded::<Pubkey>, Unbounded);
-        assert_eq!((0, BINS_FOR_TESTING), index.bin_start_and_len(&range));
-
-        let key_0 = Pubkey::from([0; 32]);
-        let key_ff = Pubkey::from([0xff; 32]);
-
-        let range = (Included(key_0), Included(key_ff));
-        let bins = index.bins();
-        assert_eq!((0, bins), index.bin_start_and_len(&range));
-        let range = (Included(key_ff), Included(key_0));
-        assert_eq!((bins - 1, 0), index.bin_start_and_len(&range));
-        let range = (Included(key_0), Unbounded);
-        assert_eq!((0, BINS_FOR_TESTING), index.bin_start_and_len(&range));
-        let range = (Included(key_ff), Unbounded);
-        assert_eq!((bins - 1, 1), index.bin_start_and_len(&range));
     }
 
     #[test]

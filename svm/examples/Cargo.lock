@@ -3345,9 +3345,9 @@ dependencies = [
 
 [[package]]
 name = "memmap2"
-version = "0.9.5"
+version = "0.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
+checksum = "483758ad303d734cec05e5c12b41d7e93e6a6390c5e9dae6bdeb7c1259012d28"
 dependencies = [
  "libc",
 ]
@@ -5301,7 +5301,7 @@ dependencies = [
  "libc",
  "log",
  "lz4",
- "memmap2 0.9.5",
+ "memmap2 0.9.7",
  "modular-bitfield",
  "num_cpus",
  "num_enum",
@@ -5525,7 +5525,6 @@ dependencies = [
  "libsecp256k1",
  "num-traits",
  "qualifier_attr",
- "scopeguard",
  "solana-account",
  "solana-account-info",
  "solana-big-mod-exp",
@@ -5569,7 +5568,7 @@ dependencies = [
  "bv",
  "bytemuck",
  "bytemuck_derive",
- "memmap2 0.9.5",
+ "memmap2 0.9.7",
  "modular-bitfield",
  "num_enum",
  "rand 0.8.5",
@@ -7608,7 +7607,7 @@ dependencies = [
  "libc",
  "log",
  "lz4",
- "memmap2 0.9.5",
+ "memmap2 0.9.7",
  "mockall",
  "modular-bitfield",
  "num-derive",
@@ -7742,9 +7741,9 @@ checksum = "61f1bc1357b8188d9c4a3af3fc55276e56987265eb7ad073ae6f8180ee54cecf"
 
 [[package]]
 name = "solana-sbpf"
-version = "0.11.2"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "642335ab08889cd963790faeaa7824e320a5ada4b6eb93ebfc842fa03ddef425"
+checksum = "3c7a3d3cff34df928b804917bf111d3ede779af406703580cd7ed8fb239f5acf"
 dependencies = [
  "byteorder",
  "combine 3.8.1",
@@ -8568,6 +8567,7 @@ dependencies = [
  "solana-instructions-sysvar",
  "solana-pubkey",
  "solana-rent",
+ "solana-sbpf",
  "solana-sdk-ids",
 ]
 
@@ -8826,9 +8826,9 @@ dependencies = [
 
 [[package]]
 name = "solana-vote-interface"
-version = "2.2.5"
+version = "2.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef4f08746f154458f28b98330c0d55cb431e2de64ee4b8efc98dcbe292e0672b"
+checksum = "b80d57478d6599d30acc31cc5ae7f93ec2361a06aefe8ea79bc81739a08af4c3"
 dependencies = [
  "bincode",
  "num-derive",
